@@ -1,0 +1,27 @@
+{
+  "name": "@ciderapp/pluginkit",
+  "version": "1.0.0-pre.1",
+  "module": "./build/index.mjs",
+  "types": "./build/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./build/index.d.ts",
+      "import": "./build/index.mjs"
+    },
+    "./mDNS": {
+      "types": "./build/mDNS.d.ts",
+      "import": "./build/mDNS.mjs"
+    },
+    "./vue/*.vue": {
+      "import": "./build/vue/*.vue"
+    },
+    "./types": {
+      "import": "./src/api/ciderapi-types/*.ts"
+    }
+  },
+  "files": [
+    "build"
+  ],
+  "type": "module",
+  "license": "MIT"
+}
