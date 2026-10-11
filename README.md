@@ -90,3 +90,7 @@ Los botones de abajo a la derecha cambian entre tarjetas y pantalla completa, y 
 
 - Si haces muchas búsquedas seguidas, YouTube puede bloquear las consultas un rato. Se pasa solo en unas horas, o al instante indicando tu navegador en Ajustes → Búsqueda → Cookies de YouTube.
 - Algunos videos tienen restricción de edad y solo se pueden ver con esas cookies.
+
+## Licencia
+
+[MIT](LICENSE)
