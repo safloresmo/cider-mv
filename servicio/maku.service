@@ -1,0 +1,10 @@
+[Unit]
+Description=Videoclips de YouTube para Maku Clips, plugin de Cider
+
+[Service]
+ExecStart=%h/.local/bin/maku
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Deja Maku Clips listo para este usuario: compila el servicio y el plugin y
+# los pone en su sitio. No escribe nada fuera de la carpeta personal.
+#   ./instalar            compila e instala
+#   ./instalar --quitar   deshace lo anterior
+set -euo pipefail
+
+raiz=$(dirname "$(readlink -f "$0")")
+bin=$HOME/.local/bin
+config=${XDG_CONFIG_HOME:-$HOME/.config}
+unidad=$config/systemd/user/maku.service
+plugin=${CIDER_PLUGINS:-$config/sh.cider.genten/plugins}/mx.sfm.maku
+
+quitar=0
+for opcion in "$@"; do
+    case $opcion in
+        --quitar) quitar=1 ;;
+        -h | --help | ayuda) sed -n '2,5p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "No conozco la opción $opcion" >&2; exit 2 ;;
+    esac
+done
+
+con_systemd() { command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; }
+
+if [ "$quitar" = 1 ]; then
+    if con_systemd; then systemctl --user disable --now maku.service >/dev/null 2>&1 || true; fi
+    rm -f "$unidad" "$bin/maku"
+    rm -rf "$plugin"
+    if con_systemd; then systemctl --user daemon-reload; fi
+    echo "Quitado. Tus videos elegidos siguen en $config/maku."
+    exit 0
+fi
+
+faltan=0
+for orden in cargo npm yt-dlp curl; do
+    command -v "$orden" >/dev/null 2>&1 || { echo "Falta $orden" >&2; faltan=1; }
+done
+[ "$faltan" = 0 ] || exit 1
+
+echo "Compilando el servicio…"
+(cd "$raiz/servicio" && cargo build --release --quiet)
+install -Dm755 "$raiz/servicio/target/release/maku" "$bin/maku"
+
+echo "Compilando el plugin…"
+(cd "$raiz/plugin" && npm install --silent && npm run build --silent)
+install -Dm644 -t "$plugin" "$raiz/plugin/dist/plugin.js" "$raiz/plugin/dist/plugin.yml"
+
+if con_systemd; then
+    # Una unidad igual a la del repo se deja como está: puede ser un enlace del usuario.
+    cmp -s "$raiz/servicio/maku.service" "$unidad" || install -Dm644 "$raiz/servicio/maku.service" "$unidad"
+    systemctl --user daemon-reload
+    systemctl --user enable maku.service >/dev/null 2>&1
+    systemctl --user restart maku.service
+    echo "Servicio en marcha (maku.service)."
+else
+    echo "Sin systemd de usuario: arranca $bin/maku con tu sesión."
+fi
+
+case :$PATH: in *:"$bin":*) ;; *) echo "Aviso: $bin no está en tu PATH (el servicio no lo necesita)." ;; esac
+echo "Listo. Reinicia Cider, activa «Maku Clips» en los ajustes de plugins y elige el diseño «Maku» en la vista inmersiva."

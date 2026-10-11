@@ -39,44 +39,17 @@ Son dos piezas:
 
 ## Instalación
 
-Servicio:
-
 ```sh
-cd servicio
-cargo build --release
-install -Dm755 target/release/maku ~/.local/bin/maku
+git clone https://github.com/safloresmo/maku-clips
+cd maku-clips
+./instalar
 ```
 
-Para que arranque con la sesión, crea `~/.config/systemd/user/maku.service`:
+El guion compila el servicio y el plugin, deja el binario en `~/.local/bin/maku`, activa el servicio de usuario `maku.service` y copia el plugin a la carpeta de plugins de Cider. No escribe nada fuera de tu carpeta personal. Si tu Cider guarda los plugins en otro sitio, indícalo con `CIDER_PLUGINS=/ruta ./instalar`.
 
-```ini
-[Unit]
-Description=Videoclips para Maku Clips
+Después reinicia Cider, activa «Maku Clips» en los ajustes de plugins y elige el diseño «Maku» en el menú de la vista inmersiva.
 
-[Service]
-ExecStart=%h/.local/bin/maku
-Restart=on-failure
-RestartSec=3
-
-[Install]
-WantedBy=default.target
-```
-
-```sh
-systemctl --user enable --now maku
-```
-
-Plugin:
-
-```sh
-cd plugin
-npm install
-npm run build
-mkdir -p ~/.config/sh.cider.genten/plugins/mx.sfm.maku
-cp dist/plugin.js dist/plugin.yml ~/.config/sh.cider.genten/plugins/mx.sfm.maku/
-```
-
-Reinicia Cider, activa «Maku Clips» en los ajustes de plugins y elige el diseño «Maku» en el menú de la vista inmersiva.
+Para quitarlo: `./instalar --quitar`. Los videos que elegiste se quedan en `~/.config/maku`.
 
 ## Uso
 
