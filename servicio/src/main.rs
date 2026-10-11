@@ -407,9 +407,15 @@ fn resolver(estado: &Estado, id: &str, calidad: &str, cookies: Option<&str>) -> 
         }
     }
     // H.264 primero: se decodifica barato por software dentro de Cider.
-    let formato = format!(
+    let mut formato = format!(
         "bv*[height<={calidad}][vcodec^=avc1][protocol^=https]/bv*[height<={calidad}][vcodec^=vp9][protocol^=https]/bv*[height<={calidad}][protocol^=https]/b[protocol^=https]"
     );
+    // YouTube no da H.264 por encima de 1080p: ahí se pide VP9 o AV1 y, si no hay, lo anterior.
+    if calidad.parse::<u32>().is_ok_and(|alto| alto > 1080) {
+        formato = format!(
+            "bv*[height<={calidad}][height>1080][vcodec^=vp9][protocol^=https]/bv*[height<={calidad}][height>1080][vcodec^=av01][protocol^=https]/{formato}"
+        );
+    }
     let direccion = format!("https://www.youtube.com/watch?v={id}");
     let datos = yt_dlp(&["--no-playlist", "-f", &formato, "--", &direccion], cookies)?;
     let flujo = datos.get("url").and_then(Value::as_str).ok_or("yt-dlp no devolvió un flujo directo")?;
