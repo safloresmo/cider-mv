@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Child, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Map, Value};
-use tiny_http::{Header, Method, Request, Response, Server};
+use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
 const DIRECCION: &str = "127.0.0.1:3060";
 const PUNTAJE_MINIMO: i32 = 40;
@@ -74,6 +74,10 @@ fn atender(mut peticion: Request, estado: &Estado) {
     let (ruta, consulta) = url.split_once('?').unwrap_or((&url, ""));
     let params: HashMap<String, String> = form_urlencoded::parse(consulta.as_bytes()).into_owned().collect();
     let metodo = peticion.method().clone();
+
+    if metodo == Method::Get && ruta == "/stream" {
+        return transmitir(peticion, estado, &params);
+    }
 
     let (codigo, cuerpo) = match (&metodo, ruta) {
         (Method::Options, _) => (204, Value::Null),
@@ -375,6 +379,126 @@ fn resolver(estado: &Estado, id: &str, calidad: &str, cookies: Option<&str>) -> 
     Ok(valor)
 }
 
+/// Cuerpo de una respuesta que sale de un `curl` en marcha; al soltarlo se detiene la descarga.
+struct Descarga {
+    hijo: Child,
+    salida: BufReader<ChildStdout>,
+}
+
+impl Read for Descarga {
+    fn read(&mut self, bufer: &mut [u8]) -> std::io::Result<usize> {
+        self.salida.read(bufer)
+    }
+}
+
+impl Drop for Descarga {
+    fn drop(&mut self) {
+        let _ = self.hijo.kill();
+        let _ = self.hijo.wait();
+    }
+}
+
+/// Lanza la descarga y lee sus cabeceras: devuelve el cuerpo, el código y las cabeceras del último salto.
+fn abrir(flujo: &str, rango: Option<&str>) -> Result<(Descarga, u16, Vec<(String, String)>), String> {
+    let mut orden = Command::new("curl");
+    orden.args(["-sS", "-L", "--max-redirs", "5", "--connect-timeout", "15", "-D", "-"]);
+    if let Some(r) = rango {
+        orden.args(["-H", &format!("Range: {r}")]);
+    }
+    let mut hijo = orden
+        .args(["--", flujo])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("no se pudo ejecutar curl: {e}"))?;
+    let salida = hijo.stdout.take().ok_or("curl sin salida")?;
+    let mut descarga = Descarga { hijo, salida: BufReader::new(salida) };
+
+    // curl escribe las cabeceras de cada salto; valen las del último, el que trae el video.
+    let (mut codigo, mut cabeceras) = (0u16, Vec::new());
+    loop {
+        let mut linea = String::new();
+        match descarga.salida.read_line(&mut linea) {
+            Ok(n) if n > 0 => {}
+            _ => break,
+        }
+        let linea = linea.trim_end();
+        if linea.starts_with("HTTP/") {
+            codigo = linea.split_whitespace().nth(1).and_then(|c| c.parse().ok()).unwrap_or(0);
+            cabeceras.clear();
+        } else if linea.is_empty() {
+            if !(300..400).contains(&codigo) {
+                break;
+            }
+        } else if let Some((nombre, valor)) = linea.split_once(':') {
+            cabeceras.push((nombre.trim().to_ascii_lowercase(), valor.trim().to_string()));
+        }
+    }
+    Ok((descarga, codigo, cabeceras))
+}
+
+fn rango_valido(rango: &str) -> bool {
+    rango
+        .strip_prefix("bytes=")
+        .and_then(|r| r.split_once('-'))
+        .is_some_and(|(a, b)| !(a.is_empty() && b.is_empty()) && a.bytes().chain(b.bytes()).all(|c| c.is_ascii_digit()))
+}
+
+/// Entrega el video pasando por aquí. YouTube redirige parte de las peticiones a otro servidor
+/// y el reproductor de Cider corta el video cuando eso pasa a mitad de la reproducción.
+fn transmitir(peticion: Request, estado: &Estado, params: &HashMap<String, String>) {
+    let fallo = |peticion: Request, codigo: u16, texto: &str| {
+        eprintln!("error: {texto}");
+        let _ = peticion.respond(Response::from_string(texto).with_status_code(codigo));
+    };
+    let id = params.get("id").map(String::as_str).unwrap_or("");
+    let calidad = params.get("quality").map(String::as_str).unwrap_or("1080");
+    if !id_valido(id) || !CALIDADES.contains(&calidad) {
+        return fallo(peticion, 400, "video o calidad inválidos");
+    }
+    let rango = peticion
+        .headers()
+        .iter()
+        .find(|h| h.field.equiv("Range"))
+        .map(|h| h.value.as_str().to_string())
+        .filter(|r| rango_valido(r));
+
+    // YouTube rechaza algunos enlaces recién dados; con uno nuevo suele bastar.
+    let mut abierta = Err("sin intentos".to_string());
+    for _ in 0..2 {
+        abierta = resolver(estado, id, calidad, cookies_de(params).as_deref()).and_then(|f| {
+            let (descarga, codigo, cabeceras) = abrir(f["streamUrl"].as_str().unwrap_or_default(), rango.as_deref())?;
+            if codigo == 200 || codigo == 206 {
+                return Ok((descarga, codigo, cabeceras));
+            }
+            estado.flujos.lock().unwrap().remove(&format!("{id}|{calidad}"));
+            Err(format!("YouTube respondió {codigo} al pedir el video {id}"))
+        });
+        if abierta.is_ok() {
+            break;
+        }
+    }
+    let (descarga, codigo, cabeceras) = match abierta {
+        Ok(a) => a,
+        Err(e) => return fallo(peticion, 502, &e),
+    };
+    let de = |nombre: &str| cabeceras.iter().find(|(n, _)| n == nombre).map(|(_, v)| v.as_str());
+    let largo = de("content-length").and_then(|l| l.parse::<usize>().ok());
+    let mut salientes = vec![
+        ("Content-Type", de("content-type").unwrap_or("video/mp4")),
+        ("Accept-Ranges", "bytes"),
+        ("Access-Control-Allow-Origin", "*"),
+        ("Cache-Control", "no-store"),
+    ];
+    if let Some(r) = de("content-range") {
+        salientes.push(("Content-Range", r));
+    }
+    let salientes = salientes.into_iter().filter_map(|(n, v)| Header::from_bytes(n, v).ok()).collect();
+    let respuesta = Response::new(StatusCode(codigo), salientes, descarga, largo, None).with_chunked_threshold(usize::MAX);
+    let _ = peticion.respond(respuesta);
+}
+
 fn clave_cancion(params: &HashMap<String, String>) -> String {
     match params.get("key").map(|k| k.trim()).filter(|k| !k.is_empty()) {
         Some(k) => k.to_string(),
@@ -435,6 +559,14 @@ fn buscar_mv(estado: &Estado, params: &HashMap<String, String>) -> Result<Value,
         return Ok(json!({ "status": "none", "key": clave, "origen": origen }));
     };
     let objeto = respuesta.as_object_mut().ok_or("respuesta interna inválida")?;
+    // El plugin recibe una dirección de este servicio, no la de YouTube (ver `transmitir`).
+    let id = objeto.get("videoId").and_then(Value::as_str).unwrap_or_default().to_string();
+    let mut local = form_urlencoded::Serializer::new(String::new());
+    local.append_pair("id", &id).append_pair("quality", calidad);
+    if let Some(origen) = &criterio.cookies {
+        local.append_pair("cookies", origen);
+    }
+    objeto.insert("streamUrl".into(), json!(format!("http://{DIRECCION}/stream?{}", local.finish())));
     objeto.insert("status".into(), json!("ok"));
     objeto.insert("key".into(), json!(clave));
     objeto.insert("origen".into(), origen);
