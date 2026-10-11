@@ -14,6 +14,10 @@ use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 const DIRECCION: &str = "127.0.0.1:3060";
 const PUNTAJE_MINIMO: i32 = 40;
 const PAUSA_BLOQUEO: u64 = 20 * 60;
+// Una canción sin video se vuelve a buscar pasado este tiempo: puede que lo hayan publicado después.
+const REINTENTO_SIN_VIDEO: u64 = 7 * 24 * 3600;
+// Por debajo de estos cuadros por segundo el "video" es una imagen fija con el audio.
+const FPS_MINIMO: f64 = 10.0;
 const AVISO_BLOQUEO: &str = "YouTube bloqueó las consultas un tiempo. Se pasa solo en unas horas, o al instante con las cookies de tu navegador (Ajustes → Búsqueda).";
 
 // Hasta cuándo (segundos epoch) no se consulta a YouTube sin cookies, tras un bloqueo antibot.
@@ -250,12 +254,25 @@ fn buscar(consulta: &str, cuantos: usize, cookies: Option<&str>) -> Result<Vec<V
         .collect())
 }
 
-/// Minúsculas y solo letras y números, para comparar títulos sin puntuación.
+fn sin_acento(c: char) -> char {
+    match c {
+        'á' | 'à' | 'â' | 'ä' | 'ã' => 'a',
+        'é' | 'è' | 'ê' | 'ë' => 'e',
+        'í' | 'ì' | 'î' | 'ï' => 'i',
+        'ó' | 'ò' | 'ô' | 'ö' | 'õ' => 'o',
+        'ú' | 'ù' | 'û' | 'ü' => 'u',
+        'ñ' => 'n',
+        'ç' => 'c',
+        _ => c,
+    }
+}
+
+/// Minúsculas sin acentos y solo letras y números, para comparar títulos sin puntuación.
 fn normalizar(texto: &str) -> String {
     texto
         .to_lowercase()
         .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+        .map(|c| if c.is_alphanumeric() { sin_acento(c) } else { ' ' })
         .collect::<String>()
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -313,6 +330,10 @@ fn puntuar(candidato: &Value, artista: &str, titulo: &str, duracion: Option<f64>
     let mut puntos = -(posicion as i32) * 2;
     if !t.is_empty() && ct.contains(&t) {
         puntos += 40;
+    } else if !t.is_empty() && t.is_ascii() && ct.is_ascii() {
+        // Mismo alfabeto y el título no aparece: es otra canción del mismo artista.
+        // Entre alfabetos distintos (japonés y su transcripción) no se puede saber.
+        puntos -= 40;
     }
     let artista_principal = a.split(" feat ").next().unwrap_or(&a).trim().to_string();
     // El canal del propio artista pesa más que una subida de terceros que solo lo nombra.
@@ -323,17 +344,27 @@ fn puntuar(candidato: &Value, artista: &str, titulo: &str, duracion: Option<f64>
             puntos += 15;
         }
     }
-    let es_oficial = ["official", "music video", " mv", "mv ", "公式", "video oficial", "videoclip"]
-        .iter()
-        .any(|p| ct.contains(p) || ct == p.trim());
-    let es_lyric = ct.contains("lyric") && !titulo_completo.contains("lyric");
+    let dice = |palabras: &[&str]| {
+        let partes: Vec<&str> = ct.split(' ').collect();
+        palabras.iter().any(|p| partes.contains(p) && !titulo_completo.split(' ').any(|x| x == *p))
+    };
+    // Subidas que solo llevan el audio sobre una imagen fija o una animación en bucle.
+    let es_audio = dice(&["audio", "visualizer", "visualiser", "pseudo"]);
+    let es_oficial = !es_audio
+        && ["official", "music video", " mv", "mv ", "公式", "video oficial", "videoclip"]
+            .iter()
+            .any(|p| ct.contains(p) || ct == p.trim());
+    let es_lyric = dice(&["lyric", "lyrics", "letra", "letras"]);
+    if es_audio {
+        puntos -= 60;
+    }
     match criterio.tipo.as_str() {
         "lyric" => {
             puntos += if es_lyric { 25 } else { 0 } + if es_oficial { 5 } else { 0 };
         }
         "cualquiera" => {}
         _ => {
-            puntos += if es_oficial { 15 } else { 0 } - if es_lyric { 10 } else { 0 };
+            puntos += if es_oficial { 15 } else { 0 } - if es_lyric { 20 } else { 0 };
         }
     }
     for palabra in &criterio.excluidas {
@@ -564,7 +595,14 @@ fn buscar_mv(estado: &Estado, params: &HashMap<String, String>) -> Result<Value,
 
     let (entrada, flujo) = match guardado {
         None => elegir_auto(estado, &clave, &cancion, calidad, &criterio, Vec::new())?,
-        Some(e) if e.get("none").and_then(Value::as_bool).unwrap_or(false) => (e, None),
+        Some(e) if e.get("none").and_then(Value::as_bool).unwrap_or(false) => {
+            let visto = e.get("visto").and_then(Value::as_u64).unwrap_or(0);
+            if e.get("origen").and_then(Value::as_str) != Some("manual") && ahora() > visto + REINTENTO_SIN_VIDEO {
+                elegir_auto(estado, &clave, &cancion, calidad, &criterio, lista_textos(&e, "descartados"))?
+            } else {
+                (e, None)
+            }
+        }
         Some(e) => {
             let id = e.get("videoId").and_then(Value::as_str).ok_or("entrada guardada sin video")?.to_string();
             match resolver(estado, &id, calidad, criterio.cookies.as_deref()) {
@@ -658,6 +696,9 @@ fn elegir_auto(
     for (puntos, c) in puntuados.into_iter().take(3) {
         let id = c["id"].as_str().unwrap_or_default();
         match resolver(estado, id, calidad, criterio.cookies.as_deref()) {
+            Ok(flujo) if flujo["fps"].as_f64().is_some_and(|f| f < FPS_MINIMO) => {
+                eprintln!("descartado {id}: imagen fija");
+            }
             Ok(flujo) => {
                 elegido = Some((puntos, c, flujo));
                 break;
@@ -682,7 +723,7 @@ fn elegir_auto(
         None => (
             json!({
                 "none": true, "origen": "auto", "artista": cancion.artista, "titulo": cancion.titulo,
-                "descartados": descartados,
+                "descartados": descartados, "visto": ahora(),
             }),
             None,
         ),
@@ -786,5 +827,69 @@ mod pruebas {
         assert!(!acceso(Some("http://127.0.0.1.ejemplo.com"), None));
         assert!(!acceso(None, Some("cross-site")));
         assert!(!acceso(Some("http://127.0.0.1:10767"), Some("cross-site")));
+    }
+
+    fn puntos(artista: &str, titulo: &str, duracion: f64, video: &str, canal: &str, dura: f64) -> i32 {
+        let criterio = Criterio { tipo: "oficial".into(), minimo: PUNTAJE_MINIMO, excluidas: Vec::new(), cookies: None };
+        let candidato = json!({ "title": video, "channel": canal, "duration": dura });
+        puntuar(&candidato, artista, titulo, Some(duracion), 0, &criterio)
+    }
+
+    #[test]
+    fn acepta_el_videoclip_oficial() {
+        assert!(puntos("Caravan Palace", "Mirrors", 200.0, "Caravan Palace - Mirrors (Official MV)", "CaravanPalace", 203.0) >= PUNTAJE_MINIMO);
+        assert!(puntos("Stuffers", "Tú Eres Lo Más Bonito", 180.0, "Stuffers - Tu Eres Lo Mas Bonito (Video Oficial)", "StuffersOfficial", 182.0) >= PUNTAJE_MINIMO);
+    }
+
+    #[test]
+    fn rechaza_el_audio_con_imagen_fija() {
+        assert!(puntos("Swingrowers", "Love!", 186.0, "Swingrowers - Love! (Audio) #electroswing", "Freshly Squeezed Jukebox and SWINGROWERS", 186.0) < PUNTAJE_MINIMO);
+        assert!(puntos("Avril Lavigne", "Things I'll Never Say", 223.0, "Avril Lavigne - Things I'll Never Say (Official Audio)", "Avril Lavigne", 223.0) < PUNTAJE_MINIMO);
+        assert!(puntos("LAUV & Troye Sivan", "I'm So Tired...", 162.0, "Lauv & Troye Sivan - i'm so tired... [Official Visualizer]", "Lauv", 163.0) < PUNTAJE_MINIMO);
+    }
+
+    #[test]
+    fn no_penaliza_audio_si_es_parte_del_titulo() {
+        assert!(puntos("Grupo", "Audio", 200.0, "Grupo - Audio (Official Video)", "Grupo", 200.0) >= PUNTAJE_MINIMO);
+    }
+
+    #[test]
+    fn rechaza_otra_cancion_del_mismo_artista() {
+        assert!(puntos("El Canto del Loco", "Tal Como Eres", 215.0, "El Canto del Loco - Zapatillas (Videoclip)", "El Canto del Loco", 211.0) < PUNTAJE_MINIMO);
+        assert!(puntos("Ska-P", "A la M****a", 240.0, "MC. Dolar", "Ska-P Oficial", 236.0) < PUNTAJE_MINIMO);
+    }
+
+    #[test]
+    fn acepta_titulos_en_otro_alfabeto() {
+        assert!(puntos("mikitoP", "ロキ", 230.0, "mikitoP『 ROKI 』MV", "mikitoP  Official", 232.0) >= PUNTAJE_MINIMO);
+        assert!(puntos("LiSA", "悪女のオキテ", 220.0, "Akujono Okite", "LiSA Official YouTube", 221.0) >= PUNTAJE_MINIMO);
+    }
+
+    #[test]
+    fn el_video_de_letra_pierde_frente_al_oficial() {
+        let letra = puntos("Rayos Láser", "Ya Me Hiciste Mal", 200.0, "Rayos Laser - Ya Me Hiciste Mal (Letra)", "ABmusic 5150", 200.0);
+        let oficial = puntos("Rayos Láser", "Ya Me Hiciste Mal", 200.0, "Rayos Laser - Ya Me Hiciste Mal (Video Oficial)", "Rayos Laser", 200.0);
+        assert!(oficial > letra);
+    }
+
+    #[test]
+    fn lee_ids_y_enlaces_de_youtube() {
+        assert_eq!(extraer_id("pgXpM4l_MwI").as_deref(), Some("pgXpM4l_MwI"));
+        assert_eq!(extraer_id("https://www.youtube.com/watch?v=pgXpM4l_MwI&t=10").as_deref(), Some("pgXpM4l_MwI"));
+        assert_eq!(extraer_id("https://youtu.be/pgXpM4l_MwI?si=abc").as_deref(), Some("pgXpM4l_MwI"));
+        assert_eq!(extraer_id("https://music.youtube.com/watch?v=pgXpM4l_MwI").as_deref(), Some("pgXpM4l_MwI"));
+        assert_eq!(extraer_id("https://www.youtube.com/shorts/pgXpM4l_MwI").as_deref(), Some("pgXpM4l_MwI"));
+        assert_eq!(extraer_id("https://ejemplo.com/watch?v=pgXpM4l_MwI"), None);
+        assert_eq!(extraer_id("no es un video"), None);
+    }
+
+    #[test]
+    fn valida_rangos() {
+        assert!(rango_valido("bytes=0-"));
+        assert!(rango_valido("bytes=100-200"));
+        assert!(rango_valido("bytes=-500"));
+        assert!(!rango_valido("bytes=-"));
+        assert!(!rango_valido("bytes=0-1,5-9"));
+        assert!(!rango_valido("items=0-1"));
     }
 }
