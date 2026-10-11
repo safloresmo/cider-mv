@@ -47,6 +47,8 @@ let esperandoDesde = 0;
 let pausadoPorCarga = false;
 let precargada = "";
 let inicioCambio = 0;
+// Último videoclip de Apple que sonó; al volver de él a su canción no se salta otra vez al video.
+let ultimoApple = "";
 const elementos = new Map<string, HTMLVideoElement>();
 
 function registrar(v: Video, el: unknown) {
@@ -105,7 +107,9 @@ async function verEnApple() {
   const id = apple.value.id;
   try {
     try {
-      await mk.playNext({ musicVideo: id });
+      // Si el videoclip ya está en la cola justo después, se salta a él en vez de insertarlo otra vez.
+      const siguienteEnCola = mk.queue?.items?.[(mk.queue?.position ?? -2) + 1];
+      if (siguienteEnCola?.type !== "musicVideo" || String(siguienteEnCola.id) !== id) await mk.playNext({ musicVideo: id });
       await mk.skipToNextItem();
     } catch {
       // Desde una emisora o lista automática no se puede insertar: se rehace la cola con el video delante.
@@ -143,7 +147,9 @@ async function iniciar(c: Cancion) {
 
   await buscarApple(c);
   if (cancion.value?.clave !== c.clave) return;
-  if (cfg.preferirApple && apple.value && (await verEnApple())) {
+  const vuelve = apple.value?.id === ultimoApple;
+  ultimoApple = "";
+  if (cfg.preferirApple && apple.value && !vuelve && (await verEnApple())) {
     peticion.abort();
     return;
   }
@@ -240,6 +246,7 @@ function sincronizar() {
     consulta.value = actual ? `${actual.artista} ${actual.titulo}` : "";
     inicioCambio = performance.now();
     if (actual?.esVideo) {
+      ultimoApple = String(item?.id ?? "");
       peticion?.abort();
       video.value = null;
       estado.value = "apple";
