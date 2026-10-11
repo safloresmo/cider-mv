@@ -1,6 +1,6 @@
-# Videoclip para Cider
+# Maku Clips 幕
 
-Plugin para [Cider](https://cider.sh) que busca el videoclip de la canción que suena y lo reproduce sincronizado con la música dentro de la vista inmersiva, con las letras y la cola al lado.
+Plugin para [Cider](https://cider.sh) que busca el videoclip de la canción que suena y lo reproduce sincronizado con la música dentro de la vista inmersiva, con las letras y la cola al lado. *Maku* (幕) es el telón, la pantalla.
 
 ![Videoclip sincronizado con las letras](capturas/demo.webp)
 
@@ -28,8 +28,8 @@ Plugin para [Cider](https://cider.sh) que busca el videoclip de la canción que 
 
 Son dos piezas:
 
-- `plugin/`: el plugin de Cider (Vue), que añade el diseño «Videoclip» a la vista inmersiva.
-- `servicio/`: un servicio local en Rust (`cider-mv`) que escucha en `127.0.0.1:3060`. Busca el video con `yt-dlp`, se lo entrega al plugin y guarda la elección de cada canción en `~/.config/cider-mv/mapa.json`.
+- `plugin/`: el plugin de Cider (Vue), que añade el diseño «Maku» a la vista inmersiva.
+- `servicio/`: un servicio local en Rust (`maku`) que escucha en `127.0.0.1:3060`. Busca el video con `yt-dlp`, se lo entrega al plugin y guarda la elección de cada canción en `~/.config/maku/mapa.json`.
 
 ## Requisitos
 
@@ -44,17 +44,17 @@ Servicio:
 ```sh
 cd servicio
 cargo build --release
-install -Dm755 target/release/cider-mv ~/.local/bin/cider-mv
+install -Dm755 target/release/maku ~/.local/bin/maku
 ```
 
-Para que arranque con la sesión, crea `~/.config/systemd/user/cider-mv.service`:
+Para que arranque con la sesión, crea `~/.config/systemd/user/maku.service`:
 
 ```ini
 [Unit]
-Description=Videoclips para Cider
+Description=Videoclips para Maku Clips
 
 [Service]
-ExecStart=%h/.local/bin/cider-mv
+ExecStart=%h/.local/bin/maku
 Restart=on-failure
 RestartSec=3
 
@@ -63,7 +63,7 @@ WantedBy=default.target
 ```
 
 ```sh
-systemctl --user enable --now cider-mv
+systemctl --user enable --now maku
 ```
 
 Plugin:
@@ -72,15 +72,15 @@ Plugin:
 cd plugin
 npm install
 npm run build
-mkdir -p ~/.config/sh.cider.genten/plugins/mx.sfm.videoclip
-cp dist/plugin.js dist/plugin.yml ~/.config/sh.cider.genten/plugins/mx.sfm.videoclip/
+mkdir -p ~/.config/sh.cider.genten/plugins/mx.sfm.maku
+cp dist/plugin.js dist/plugin.yml ~/.config/sh.cider.genten/plugins/mx.sfm.maku/
 ```
 
-Reinicia Cider, activa «Videoclip» en los ajustes de plugins y elige el diseño «Videoclip» en el menú de la vista inmersiva.
+Reinicia Cider, activa «Maku Clips» en los ajustes de plugins y elige el diseño «Maku» en el menú de la vista inmersiva.
 
 ## Uso
 
-Los botones de abajo a la derecha cambian entre tarjetas y pantalla completa, y muestran u ocultan las letras y la cola. El botón **MV** abre el panel:
+Los botones de abajo a la derecha cambian entre tarjetas y pantalla completa, y muestran u ocultan las letras y la cola. El botón **幕** abre el panel:
 
 - **Canción**: el video actual, su desfase y recorte, y la búsqueda para elegir otro.
 - **Ajustes**: aspecto, video, letras, búsqueda y sincronía.

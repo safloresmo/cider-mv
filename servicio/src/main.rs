@@ -54,7 +54,7 @@ fn main() {
             std::process::exit(1);
         }
     };
-    eprintln!("cider-mv escuchando en http://{DIRECCION}");
+    eprintln!("maku escuchando en http://{DIRECCION}");
 
     for peticion in servidor.incoming_requests() {
         let estado = Arc::clone(&estado);
@@ -66,7 +66,7 @@ fn dir_config() -> PathBuf {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"));
-    base.join("cider-mv")
+    base.join("maku")
 }
 
 fn atender(mut peticion: Request, estado: &Estado) {
@@ -601,9 +601,9 @@ fn no_disponible(error: &str) -> bool {
 fn explicar(error: &str) -> String {
     let e = error.to_lowercase();
     if e.contains("confirm your age") || e.contains("age-restricted") {
-        "YouTube exige iniciar sesión para ver este video (restricción de edad). Configura las cookies del navegador en Ajustes → Búsqueda, o elige otro con el botón MV.".into()
+        "YouTube exige iniciar sesión para ver este video (restricción de edad). Configura las cookies del navegador en Ajustes → Búsqueda, o elige otro con el botón 幕.".into()
     } else if no_disponible(error) {
-        "Este video ya no está disponible en YouTube. Elige otro con el botón MV.".into()
+        "Este video ya no está disponible en YouTube. Elige otro con el botón 幕.".into()
     } else {
         error.to_string()
     }

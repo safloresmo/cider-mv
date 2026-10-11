@@ -8,9 +8,9 @@ const cfg = useConfig();
 
 <template>
   <div class="vc-ajustes">
-    <h2>Videoclip</h2>
+    <h2>Maku Clips</h2>
     <p>
-      El video de cada canción se busca solo. Para cambiarlo o quitarlo en la canción que suena, usa el botón MV de la
+      El video de cada canción se busca solo. Para cambiarlo o quitarlo en la canción que suena, usa el botón 幕 de la
       vista inmersiva.
     </p>
     <Opciones />

@@ -21,7 +21,7 @@ async function cargar() {
     entradas.value = (await r.json()).items ?? [];
     error.value = "";
   } catch {
-    error.value = "No se pudo conectar con el servicio cider-mv.";
+    error.value = "No se pudo conectar con el servicio maku.";
   }
 }
 

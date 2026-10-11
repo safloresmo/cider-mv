@@ -27,15 +27,15 @@ const { plugin, setupConfig, customElementName, useCPlugin } = definePluginConte
     this.SettingsElement = ajustes;
 
     addImmersiveLayout({
-      name: "Videoclip",
-      identifier: "videoclip-layout",
+      name: "Maku",
+      identifier: "maku-layout",
       component: customElementName("immersive-layout"),
       type: "normal",
     });
     // Cider usa otro diseño cuando la ventana es más alta que ancha; sin esto ahí no saldría el plugin.
     addImmersiveLayout({
-      name: "Videoclip",
-      identifier: "videoclip-layout-portrait",
+      name: "Maku",
+      identifier: "maku-layout-portrait",
       component: customElementName("immersive-layout"),
       type: "portrait",
     });

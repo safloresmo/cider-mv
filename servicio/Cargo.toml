@@ -1,8 +1,8 @@
 [package]
-name = "cider-mv"
+name = "maku"
 version = "0.1.0"
 edition = "2021"
-description = "Servicio local que busca y resuelve videoclips de YouTube para el plugin Videoclip de Cider"
+description = "Servicio local que busca y entrega videoclips de YouTube para Maku Clips, plugin de Cider"
 
 [dependencies]
 form_urlencoded = "1"
