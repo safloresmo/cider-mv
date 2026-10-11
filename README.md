@@ -1,3 +1,5 @@
+<p align="center"><img src="icono/maku-clips.svg" width="112" alt="Maku Clips"></p>
+
 # Maku Clips 幕
 
 Plugin para [Cider](https://cider.sh) que busca el videoclip de la canción que suena y lo reproduce sincronizado con la música dentro de la vista inmersiva, con las letras y la cola al lado. *Maku* (幕) es el telón, la pantalla.
@@ -16,13 +18,15 @@ Plugin para [Cider](https://cider.sh) que busca el videoclip de la canción que 
 
 ## Capturas
 
+![Letras sincronizadas en el diseño de tarjetas](capturas/letras.webp)
+
 | Tarjetas | Pantalla completa |
 |---|---|
-| ![Diseño en tarjetas](capturas/tarjetas.png) | ![Pantalla completa](capturas/completa.png) |
+| ![Diseño en tarjetas](capturas/tarjetas.webp) | ![Pantalla completa](capturas/completa.webp) |
 
 | Elegir el video | Ajustes | Mis videos |
 |---|---|---|
-| ![Panel de la canción](capturas/panel-cancion.png) | ![Ajustes](capturas/panel-ajustes.png) | ![Lista de videos](capturas/mis-videos.png) |
+| ![Panel de la canción](capturas/panel-cancion.webp) | ![Ajustes](capturas/panel-ajustes.webp) | ![Lista de videos](capturas/mis-videos.webp) |
 
 ## Cómo funciona
 
