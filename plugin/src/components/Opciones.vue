@@ -60,6 +60,7 @@ const secciones: { titulo: string; campos: Campo[] }[] = [
       { clave: "letrasAncho", titulo: "Ancho sobre el video", tipo: "rango", min: 25, max: 100, paso: 1 },
       { clave: "letrasTam", titulo: "Tamaño", tipo: "rango", min: 16, max: 64, paso: 1 },
       { clave: "letrasFondo", titulo: "Fondo de lectura", tipo: "lista", opciones: [["sombra", "Sombra"], ["panel", "Panel translúcido"], ["ninguno", "Ninguno"]] },
+      { clave: "letrasAnimacion", titulo: "Animación", ayuda: "Cuanto más sencilla, menos trabajo para el equipo. Mínima ilumina palabra por palabra, sin relleno ni brillo.", tipo: "lista", opciones: [["completa", "Completa"], ["ligera", "Ligera"], ["minima", "Mínima"]] },
     ],
   },
   {

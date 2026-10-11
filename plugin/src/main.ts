@@ -63,6 +63,7 @@ export const cfg = setupConfig({
   letrasAncho: <number>46,
   letrasTam: <number>30,
   letrasFondo: <"sombra" | "panel" | "ninguno">"sombra",
+  letrasAnimacion: <"completa" | "ligera" | "minima">"ligera",
   rotulo: <"no" | "arriba-izquierda" | "arriba-centro" | "abajo-izquierda">"no",
   caratulaMini: <boolean>false,
   botonesCider: <"siempre" | "controles" | "nunca">"controles",

@@ -424,6 +424,7 @@ const clases = computed(() => [
   `vc-letras-${cfg.letrasModo}`,
   `vc-pos-${cfg.letrasPos}`,
   `vc-lectura-${cfg.letrasFondo}`,
+  `vc-anim-${cfg.letrasAnimacion}`,
   `vc-barra-${cfg.barra}`,
   {
     "vc-con-video": conVideo.value,
@@ -937,12 +938,6 @@ watch(
       padding: 14px 22px !important;
     }
 
-    // Cider repinta el relleno de cada sílaba en cada cuadro de la pantalla; por pasos se ve
-    // igual y cuesta bastante menos. El primero es el relleno y el segundo su brillo.
-    .lyric-char {
-      animation-timing-function: steps(6), steps(24) !important;
-    }
-
     .lyric-line {
       --fontSize: var(--vc-letra) !important;
       --fontSizeBG: calc(var(--vc-letra) * 0.6) !important;
@@ -955,6 +950,23 @@ watch(
 
   &.vc-letras-linea .vc-letras {
     height: calc(var(--vc-letra) * 1.7 + 28px);
+  }
+
+  // Cider repinta el relleno de cada sílaba en cada cuadro de la pantalla; por pasos se ve
+  // casi igual y cuesta bastante menos. El primero es el relleno y el segundo su brillo.
+  &.vc-anim-ligera .vc-letras .lyric-char {
+    animation-timing-function: steps(6), steps(24) !important;
+  }
+
+  // Sin relleno ni brillo: Cider sigue marcando la palabra que suena.
+  &.vc-anim-minima .vc-letras {
+    .lyric-char {
+      animation: none !important;
+    }
+
+    .lyric-line {
+      filter: none !important;
+    }
   }
 
   &.vc-lectura-sombra .vc-letras {
