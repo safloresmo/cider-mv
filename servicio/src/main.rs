@@ -75,8 +75,18 @@ fn atender(mut peticion: Request, estado: &Estado) {
     let params: HashMap<String, String> = form_urlencoded::parse(consulta.as_bytes()).into_owned().collect();
     let metodo = peticion.method().clone();
 
+    let cabecera = |nombre: &'static str| {
+        peticion.headers().iter().find(|h| h.field.equiv(nombre)).map(|h| h.value.as_str().to_string())
+    };
+    let origen = cabecera("Origin");
+    if !acceso(origen.as_deref(), cabecera("Sec-Fetch-Site").as_deref()) {
+        let _ = peticion.respond(Response::from_string("origen no permitido").with_status_code(403));
+        return;
+    }
+    let origen = origen.unwrap_or_default();
+
     if metodo == Method::Get && ruta == "/stream" {
-        return transmitir(peticion, estado, &params);
+        return transmitir(peticion, estado, &params, &origen);
     }
 
     let (codigo, cuerpo) = match (&metodo, ruta) {
@@ -101,7 +111,8 @@ fn atender(mut peticion: Request, estado: &Estado) {
     let mut respuesta = Response::from_string(texto).with_status_code(codigo);
     for (nombre, valor) in [
         ("Content-Type", "application/json; charset=utf-8"),
-        ("Access-Control-Allow-Origin", "*"),
+        ("Access-Control-Allow-Origin", origen.as_str()),
+        ("Vary", "Origin"),
         ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
         ("Access-Control-Allow-Headers", "content-type"),
         ("Access-Control-Allow-Private-Network", "true"),
@@ -112,6 +123,20 @@ fn atender(mut peticion: Request, estado: &Estado) {
         }
     }
     let _ = peticion.respond(respuesta);
+}
+
+fn origen_local(origen: &str) -> bool {
+    let Some(resto) = origen.strip_prefix("http://").or_else(|| origen.strip_prefix("https://")) else {
+        return false;
+    };
+    let equipo = resto.rsplit_once(':').map_or(resto, |(e, puerto)| if puerto.bytes().all(|b| b.is_ascii_digit()) { e } else { resto });
+    matches!(equipo, "127.0.0.1" | "localhost" | "[::1]")
+}
+
+/// Solo atiende a programas de este equipo: una página web cualquiera abierta en el navegador
+/// no debe poder cambiar el mapa ni lanzar búsquedas.
+fn acceso(origen: Option<&str>, sitio: Option<&str>) -> bool {
+    sitio != Some("cross-site") && origen.map_or(true, origen_local)
 }
 
 fn responder(resultado: Result<Value, String>) -> (u16, Value) {
@@ -447,7 +472,7 @@ fn rango_valido(rango: &str) -> bool {
 
 /// Entrega el video pasando por aquí. YouTube redirige parte de las peticiones a otro servidor
 /// y el reproductor de Cider corta el video cuando eso pasa a mitad de la reproducción.
-fn transmitir(peticion: Request, estado: &Estado, params: &HashMap<String, String>) {
+fn transmitir(peticion: Request, estado: &Estado, params: &HashMap<String, String>, origen: &str) {
     let fallo = |peticion: Request, codigo: u16, texto: &str| {
         eprintln!("error: {texto}");
         let _ = peticion.respond(Response::from_string(texto).with_status_code(codigo));
@@ -488,7 +513,8 @@ fn transmitir(peticion: Request, estado: &Estado, params: &HashMap<String, Strin
     let mut salientes = vec![
         ("Content-Type", de("content-type").unwrap_or("video/mp4")),
         ("Accept-Ranges", "bytes"),
-        ("Access-Control-Allow-Origin", "*"),
+        ("Access-Control-Allow-Origin", origen),
+        ("Vary", "Origin"),
         ("Cache-Control", "no-store"),
     ];
     if let Some(r) = de("content-range") {
@@ -743,4 +769,22 @@ fn paleta() -> Result<Value, String> {
         .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".cache"));
     let texto = fs::read_to_string(base.join("ryoku/colors.json")).map_err(|e| format!("sin paleta de Ryoku: {e}"))?;
     serde_json::from_str(&texto).map_err(|e| format!("paleta ilegible: {e}"))
+}
+
+#[cfg(test)]
+mod pruebas {
+    use super::*;
+
+    #[test]
+    fn solo_origenes_de_este_equipo() {
+        assert!(acceso(None, None));
+        assert!(acceso(Some("http://127.0.0.1:10767"), Some("same-site")));
+        assert!(acceso(Some("http://localhost:10767"), None));
+        assert!(acceso(None, Some("same-site")));
+        assert!(!acceso(Some("https://ejemplo.com"), None));
+        assert!(!acceso(Some("null"), None));
+        assert!(!acceso(Some("http://127.0.0.1.ejemplo.com"), None));
+        assert!(!acceso(None, Some("cross-site")));
+        assert!(!acceso(Some("http://127.0.0.1:10767"), Some("cross-site")));
+    }
 }
