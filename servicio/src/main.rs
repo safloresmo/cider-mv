@@ -291,6 +291,32 @@ fn titulo_base(titulo: &str) -> &str {
     if base.is_empty() { titulo.trim() } else { base }
 }
 
+/// Compara un título con palabras tapadas ("A la M****a") contra el del video, que las trae enteras.
+fn coincide_censurado(video: &str, titulo: &str) -> bool {
+    if !titulo.contains('*') {
+        return false;
+    }
+    let patron: Vec<String> = titulo_base(titulo)
+        .to_lowercase()
+        .split_whitespace()
+        .map(|p| p.chars().map(sin_acento).filter(|c| c.is_alphanumeric() || *c == '*').collect::<String>())
+        .filter(|p| !p.is_empty())
+        .collect();
+    if patron.is_empty() {
+        return false;
+    }
+    let palabras: Vec<&str> = video.split(' ').collect();
+    palabras.windows(patron.len()).any(|tramo| {
+        tramo.iter().zip(&patron).all(|(palabra, p)| match p.split_once('*') {
+            None => palabra == p,
+            Some((inicio, resto)) => {
+                let fin = resto.trim_start_matches('*');
+                palabra.len() >= inicio.len() + fin.len() && palabra.starts_with(inicio) && palabra.ends_with(fin)
+            }
+        })
+    })
+}
+
 /// Preferencias de búsqueda que manda el plugin.
 struct Criterio {
     // "oficial", "lyric" o "cualquiera"
@@ -328,7 +354,7 @@ fn puntuar(candidato: &Value, artista: &str, titulo: &str, duracion: Option<f64>
     let titulo_completo = normalizar(titulo);
 
     let mut puntos = -(posicion as i32) * 2;
-    if !t.is_empty() && ct.contains(&t) {
+    if !t.is_empty() && (ct.contains(&t) || coincide_censurado(&ct, titulo)) {
         puntos += 40;
     } else if !t.is_empty() && t.is_ascii() && ct.is_ascii() {
         // Mismo alfabeto y el título no aparece: es otra canción del mismo artista.
@@ -863,6 +889,14 @@ mod pruebas {
     fn rechaza_otra_cancion_del_mismo_artista() {
         assert!(puntos("El Canto del Loco", "Tal Como Eres", 215.0, "El Canto del Loco - Zapatillas (Videoclip)", "El Canto del Loco", 211.0) < PUNTAJE_MINIMO);
         assert!(puntos("Ska-P", "A la M****a", 240.0, "MC. Dolar", "Ska-P Oficial", 236.0) < PUNTAJE_MINIMO);
+    }
+
+    #[test]
+    fn reconoce_titulos_con_palabras_tapadas() {
+        assert!(puntos("Ska-P", "A la M****a", 240.0, "Ska-P - A la mierda (Videoclip oficial)", "Ska-P Oficial", 238.0) >= PUNTAJE_MINIMO);
+        assert!(coincide_censurado("ska p a la mierda videoclip oficial", "A la M****a"));
+        assert!(!coincide_censurado("mc dolar", "A la M****a"));
+        assert!(!coincide_censurado("a la mierda", "A la mierda"));
     }
 
     #[test]
