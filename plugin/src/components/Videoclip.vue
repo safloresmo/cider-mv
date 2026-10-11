@@ -220,7 +220,7 @@ function reanudarSiPause() {
 
 function pintarAmbiente(v: HTMLVideoElement) {
   const lienzo = elAmbiente.value;
-  if (!lienzo || !cfg.luzAmbiente) return;
+  if (!lienzo || !cfg.luzAmbiente || fondoTapado.value) return;
   pulso += 1;
   if (cfg.bajoConsumo && pulso % 5 !== 0) return;
   try {
@@ -397,6 +397,9 @@ const fuente = computed(() => (estado.value === "apple" ? "Apple" : estado.value
 
 const conVideo = computed(() => estado.value === "listo" || estado.value === "apple");
 
+// En pantalla completa el video tapa los fondos borrosos: pintarlos sería trabajo que no se ve.
+const fondoTapado = computed(() => conVideo.value && cfg.disposicion === "completo" && !(cfg.cola && cfg.colaCompleta === "lado"));
+
 const variables = computed(() => {
   const v: Record<string, string> = {
     "--vc-letra": `${cfg.letrasTam}px`,
@@ -424,6 +427,7 @@ const clases = computed(() => [
   `vc-barra-${cfg.barra}`,
   {
     "vc-con-video": conVideo.value,
+    "vc-fondo-tapado": fondoTapado.value,
     "vc-estrecho": estrecho.value,
     "vc-sobre": cfg.disposicion === "completo" || cfg.letrasSitio === "sobre",
     "vc-inactivo": inactivo.value,
@@ -672,6 +676,11 @@ watch(
     inset: 0;
     width: 100%;
     height: 100%;
+  }
+
+  &.vc-fondo-tapado .vc-fondo,
+  &.vc-fondo-tapado .vc-ambiente {
+    display: none;
   }
 
   .vc-fondo {
@@ -926,6 +935,12 @@ watch(
 
     .lyric-view {
       padding: 14px 22px !important;
+    }
+
+    // Cider repinta el relleno de cada sílaba en cada cuadro de la pantalla; por pasos se ve
+    // igual y cuesta bastante menos. El primero es el relleno y el segundo su brillo.
+    .lyric-char {
+      animation-timing-function: steps(6), steps(24) !important;
     }
 
     .lyric-line {
@@ -1368,6 +1383,11 @@ watch(
     justify-content: center;
     transition: opacity 0.3s ease;
   }
+}
+
+// El fondo animado de Cider queda entero detrás de esta vista: no hace falta componerlo.
+.root-layout-container:has(.vc-raiz) .blurmap {
+  display: none;
 }
 
 .root-layout-container.vc-ocultar-cider > .q-pa-md > button.q-btn {
